@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}📊 Результат{% endblock %}
+{% block content %}
+
+<div class="flex items-center justify-between mb-6">
+
+</div>
+
+<h2 class="text-xl font-semibold mb-4">📊 Результат рассылки</h2>
+
+<p class="mb-2">✅ Отправлено писем: <strong>{{ result.sent|length }}</strong></p>
+<p class="mb-4">⚠️ Ошибок: <strong>{{ result.skipped|length }}</strong></p>
+
+{% if result.skipped %}
+  <ul class="list-disc pl-6 text-red-600">
+    {% for email, reason in result.skipped %}
+      <li>{{ email }} — {{ reason }}</li>
+    {% endfor %}
+  </ul>
+{% else %}
+  <p class="text-green-600">Все письма отправлены успешно! 🎉</p>
+{% endif %}
+
+<form method="post" action="/logout" class="mt-8">
+  <button class="bg-gray-200 text-gray-700 px-4 py-2 rounded hover:bg-gray-300 transition">
+    ⏮ Вернуться к авторизации
+  </button>
+</form>
+
+{% endblock %}

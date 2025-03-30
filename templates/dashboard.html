@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}📬 Панель{% endblock %}
+{% block content %}
+
+<div class="flex items-center justify-between mb-6">
+
+</div>
+
+<h2 class="text-xl font-semibold mb-4">👋 Привет, {{ client.display_name }}!</h2>
+
+<p class="mb-4">Готовы отправить письма вашим клиентам?</p>
+
+<form method="post" action="/send">
+  <button class="bg-green-500 hover:bg-green-600 text-white px-5 py-2 rounded-lg shadow transition">
+    📤 Отправить письма
+  </button>
+</form>
+
+<form method="post" action="/logout" class="mt-6">
+  <button class="text-sm text-gray-500 underline hover:text-black">🚪 Выйти</button>
+</form>
+{% endblock %}

@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}🔐 Вход{% endblock %}
+{% block content %}
+
+<div class="flex items-center justify-between mb-6">
+
+</div>
+
+<h2 class="text-xl font-semibold mb-4">🔐 Вход</h2>
+<form method="post" class="space-y-4">
+  <div>
+    <label class="block text-sm font-medium">👤 Логин:</label>
+    <input type="text" name="login" required class="w-full border p-2 rounded-lg shadow-sm" />
+  </div>
+  <div>
+    <label class="block text-sm font-medium">🔑 Пароль:</label>
+    <input type="password" name="password" required class="w-full border p-2 rounded-lg shadow-sm" />
+  </div>
+  {% if error %}
+    <p class="text-red-600 text-sm">{{ error }}</p>
+  {% endif %}
+  <button type="submit" class="w-full bg-gradient-to-r from-blue-500 to-purple-500 text-white px-4 py-2 rounded-lg shadow hover:opacity-90 transition">
+    Войти 🚀
+  </button>
+</form>
+{% endblock %}

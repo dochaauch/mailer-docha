@@ -1,0 +1,21 @@
+# Конфиденциальные данные
+confid.py
+clients_config.json
+clients_config.txt
+credentials/
+
+# Виртуальное окружение (если используется)
+venv/
+.venv/
+
+# Кэш Python
+__pycache__/
+*.pyc
+
+# Временные файлы
+tmp_pdf/
+
+# Системные файлы
+.DS_Store
+.env
+.idea/
