@@ -10,15 +10,16 @@ from googleapiclient.http import MediaIoBaseDownload
 import shutil
 import confid
 import time
-import os
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(BASE_DIR, 'clients_config.json')
 
+
 def load_clients_config():
     with open(CONFIG_PATH, encoding='utf-8') as f:
         return json.load(f)
+
 
 def get_google_sheet_data(sheet_id, sheet_name, credentials_path):
     credentials = service_account.Credentials.from_service_account_file(
@@ -39,8 +40,8 @@ def get_google_sheet_data(sheet_id, sheet_name, credentials_path):
     headers = values[0]
     rows = values[1:]
 
-    df = pd.DataFrame(rows, columns=headers)
-    return df
+    return pd.DataFrame(rows, columns=headers)
+
 
 def get_drive_service(credentials_path):
     credentials = service_account.Credentials.from_service_account_file(
@@ -49,12 +50,14 @@ def get_drive_service(credentials_path):
     )
     return build('drive', 'v3', credentials=credentials)
 
+
 def get_pdf_files_map(folder_id, service):
     results = service.files().list(
         q=f"'{folder_id}' in parents and mimeType='application/pdf'",
         fields="files(id, name)"
     ).execute()
     return {file['name']: file['id'] for file in results['files']}
+
 
 def download_pdf(file_id, local_path, service):
     request = service.files().get_media(fileId=file_id)
@@ -66,9 +69,11 @@ def download_pdf(file_id, local_path, service):
     with open(local_path, 'wb') as f:
         f.write(file_io.getvalue())
 
+
 def send_email(to, subject, body, attachment, bcc=None):
     yag = yagmail.SMTP(user=confid.user, password=confid.password, timeout=30)
     yag.send(to=to, bcc=bcc, subject=subject, contents=body, attachments=attachment)
+
 
 def send_control_email(client_config, result):
     subject = f"[ОТЧЕТ] Рассылка для {client_config['display_name']}"
@@ -86,15 +91,23 @@ def send_control_email(client_config, result):
 
     send_email(client_config['control_email'], subject, body, None)
 
+
 def process_and_send_emails(client_config):
     if not client_config.get('active', False):
         return {'sent': [], 'skipped': [('ВСЕ', 'Клиент не активен — рассылка отключена')]}
 
-    df = get_google_sheet_data(client_config['sheet_id'], client_config['sheet_name'], client_config['credentials_path'])
-    drive_service = get_drive_service(client_config['credentials_path'])
+    credentials_path = os.path.join(BASE_DIR, client_config['credentials_path'])
+
+    df = get_google_sheet_data(
+        sheet_id=client_config['sheet_id'],
+        sheet_name=client_config['sheet_name'],
+        credentials_path=credentials_path
+    )
+
+    drive_service = get_drive_service(credentials_path)
     pdf_map = get_pdf_files_map(client_config['folder_id'], drive_service)
 
-    tmp_path = 'tmp_pdf'
+    tmp_path = os.path.join(BASE_DIR, 'tmp_pdf')
     os.makedirs(tmp_path, exist_ok=True)
 
     sent = []
