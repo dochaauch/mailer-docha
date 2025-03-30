@@ -1,22 +1,54 @@
 {% extends "base.html" %}
-{% block title %}📬 Панель{% endblock %}
+
 {% block content %}
+<div class="bg-white rounded-2xl shadow-md p-6 w-full max-w-xl mx-auto mt-10">
+  <h1 class="text-3xl font-handwriting text-orange-500 mb-4 border-b-4 border-orange-400 pb-2 flex items-center">
+    📬 mailer docha
+  </h1>
 
-<div class="flex items-center justify-between mb-6">
+  <h2 class="text-xl font-semibold mb-4 flex items-center">
+    👋 Привет, {{ client.display_name }}!
+  </h2>
 
+  <p class="mb-4 text-gray-700">Готовы отправить письма вашим клиентам?</p>
+
+  <form method="post" action="/send" onsubmit="handleSendClick(event)">
+    <button id="sendButton" type="submit" class="bg-green-500 hover:bg-green-600 text-white px-6 py-2 rounded-xl shadow transition duration-300">
+      💌 Отправить письма
+    </button>
+  </form>
+
+  <!-- Прогресс-бар -->
+  <div id="progressWrapper" class="mt-4 hidden w-full bg-gray-200 rounded-full h-4 shadow-inner">
+    <div id="progressBar" class="bg-green-500 h-4 rounded-full transition-all duration-300 ease-out" style="width: 0%"></div>
+  </div>
+
+  <form method="post" action="/logout" class="mt-6">
+    <button class="text-red-600 hover:text-red-800 flex items-center gap-1">
+      🪵 Выйти
+    </button>
+  </form>
 </div>
 
-<h2 class="text-xl font-semibold mb-4">👋 Привет, {{ client.display_name }}!</h2>
+<script>
+  function handleSendClick(e) {
+    const btn = document.getElementById('sendButton');
+    const wrapper = document.getElementById('progressWrapper');
+    const bar = document.getElementById('progressBar');
 
-<p class="mb-4">Готовы отправить письма вашим клиентам?</p>
+    btn.disabled = true;
+    btn.classList.add('opacity-50', 'cursor-not-allowed');
+    wrapper.classList.remove('hidden');
 
-<form method="post" action="/send">
-  <button class="bg-green-500 hover:bg-green-600 text-white px-5 py-2 rounded-lg shadow transition">
-    📤 Отправить письма
-  </button>
-</form>
+    // Плавная имитация прогресса до ~95%
+    let progress = 0;
+    const interval = setInterval(() => {
+      progress += Math.random() * 5;
+      bar.style.width = Math.min(progress, 95) + "%";
+    }, 300);
 
-<form method="post" action="/logout" class="mt-6">
-  <button class="text-sm text-gray-500 underline hover:text-black">🚪 Выйти</button>
-</form>
+    // Прекратим анимацию при уходе со страницы
+    window.addEventListener("beforeunload", () => clearInterval(interval));
+  }
+</script>
 {% endblock %}
