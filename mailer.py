@@ -13,7 +13,8 @@ import time
 import os
 
 
-CONFIG_PATH = os.path.join(os.path.dirname(__file__), 'clients_config.json')
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+CONFIG_PATH = os.path.join(BASE_DIR, 'clients_config.json')
 
 def load_clients_config():
     with open(CONFIG_PATH, encoding='utf-8') as f:
