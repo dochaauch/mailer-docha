@@ -10,8 +10,10 @@ from googleapiclient.http import MediaIoBaseDownload
 import shutil
 import confid
 import time
+import os
 
-CONFIG_PATH = 'clients_config.json'
+
+CONFIG_PATH = os.path.join(os.path.dirname(__file__), 'clients_config.json')
 
 def load_clients_config():
     with open(CONFIG_PATH, encoding='utf-8') as f:
