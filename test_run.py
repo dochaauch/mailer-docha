@@ -4,7 +4,7 @@ from mailer import load_clients_config, process_and_send_emails
 clients = load_clients_config()
 
 # Берём конкретного клиента по логину
-client = clients['punane19ku']  # замени на нужный логин, если другой
+client = clients['liivamae6ku']  # замени на нужный логин, если другой
 
 # Запускаем рассылку
 result = process_and_send_emails(client)

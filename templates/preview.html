@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="bg-white rounded-2xl shadow-md p-6 w-full max-w-3xl mx-auto mt-10">
+  <h1 class="text-3xl font-handwriting text-orange-500 mb-4 border-b-4 border-orange-400 pb-2 flex items-center">
+    📋 Предпросмотр рассылки
+  </h1>
+
+  <h2 class="text-xl font-semibold mb-2 text-green-700">✅ Готовы к отправке:</h2>
+  {% if preview.ready %}
+    <div class="max-h-96 overflow-y-auto border rounded-lg mb-6">
+      <table class="w-full table-auto text-sm">
+        <thead class="sticky top-0 bg-green-100">
+          <tr>
+            <th class="p-2 text-left">Квартира</th>
+            <th class="p-2 text-left">Email</th>
+            <th class="p-2 text-left">PDF</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in preview.ready %}
+          <tr class="border-t">
+            <td class="p-2">{{ item.kr_nr }}</td>
+            <td class="p-2">{{ item.email }}</td>
+            <td class="p-2">{{ item.pdf }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <form method="post" action="/send_confirmed">
+      <button type="submit" class="bg-green-500 hover:bg-green-600 text-white px-6 py-2 rounded-xl shadow">
+        📤 Отправить письма
+      </button>
+    </form>
+  {% else %}
+    <p class="text-gray-600 mb-6">Нет писем для отправки.</p>
+  {% endif %}
+
+
+  <h2 class="text-xl font-semibold mt-8 mb-2 text-red-700">⚠️ Проблемы:</h2>
+  {% if preview.skipped %}
+    <div class="max-h-96 overflow-y-auto border rounded-lg">
+      <table class="w-full table-auto text-sm">
+        <thead class="sticky top-0 bg-red-100">
+          <tr>
+            <th class="p-2 text-left">Email</th>
+            <th class="p-2 text-left">Описание ошибки</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for email, reason in preview.skipped %}
+          <tr class="border-t">
+            <td class="p-2">{{ email or '—' }}</td>
+            <td class="p-2 text-red-700">{{ reason }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p class="text-gray-500">Ошибок не обнаружено.</p>
+  {% endif %}
+
+  <form method="post" action="/logout" class="mt-8">
+    <button class="text-red-600 hover:text-red-800 flex items-center gap-1">
+      🪵 Выйти
+    </button>
+  </form>
+</div>
+{% endblock %}

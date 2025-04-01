@@ -8,7 +8,6 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
 import shutil
-import confid
 import time
 
 
@@ -70,9 +69,10 @@ def download_pdf(file_id, local_path, service):
         f.write(file_io.getvalue())
 
 
-def send_email(to, subject, body, attachment, bcc=None):
-    yag = yagmail.SMTP(user=confid.user, password=confid.password, timeout=30)
+def send_email(user, password, to, subject, body, attachment, bcc=None):
+    yag = yagmail.SMTP(user=user, password=password, timeout=30)
     yag.send(to=to, bcc=bcc, subject=subject, contents=body, attachments=attachment)
+
 
 
 def send_control_email(client_config, result):
@@ -89,7 +89,97 @@ def send_control_email(client_config, result):
     for email, reason in result['skipped']:
         body += f"- {email}: {reason}\n"
 
-    send_email(client_config['control_email'], subject, body, None)
+    send_email(
+        user=client_config['email_user'],
+        password=client_config['email_password'],
+        to=client_config['control_email'],
+        subject=subject,
+        body=body,
+        attachment=None
+    )
+
+def preview_emails(client_config):
+    credentials_path = os.path.join(BASE_DIR, client_config['credentials_path'])
+
+    df = get_google_sheet_data(
+        sheet_id=client_config['sheet_id'],
+        sheet_name=client_config['sheet_name'],
+        credentials_path=credentials_path
+    )
+
+    drive_service = get_drive_service(credentials_path)
+    pdf_map = get_pdf_files_map(client_config['folder_id'], drive_service)
+
+    ready = []
+    skipped = []
+
+    for _, row in df.iterrows():
+        apt_number = str(row['apt_number']).strip()
+        email = str(row.get('email', '')).strip()
+        kr_nr = str(row.get('kr_nr', '')).strip()
+
+        if not email:
+            skipped.append(("", f"Отсутствует email для квартиры {apt_number}"))
+            continue
+
+        matched_file = next((fname for fname in pdf_map if apt_number in fname), None)
+        if not matched_file:
+            skipped.append((email, f"Файл PDF не найден по шаблону apt_number ({apt_number})"))
+            continue
+
+        ready.append({
+            "apt_number": apt_number,
+            "kr_nr": kr_nr,
+            "email": email,
+            "pdf": matched_file
+        })
+
+    return {
+        "ready": ready,
+        "skipped": skipped
+    }
+def preview_emails(client_config):
+    credentials_path = os.path.join(BASE_DIR, client_config['credentials_path'])
+
+    df = get_google_sheet_data(
+        sheet_id=client_config['sheet_id'],
+        sheet_name=client_config['sheet_name'],
+        credentials_path=credentials_path
+    )
+
+    drive_service = get_drive_service(credentials_path)
+    pdf_map = get_pdf_files_map(client_config['folder_id'], drive_service)
+
+    ready = []
+    skipped = []
+
+    for _, row in df.iterrows():
+        apt_number = str(row['apt_number']).strip()
+        email = str(row.get('email', '')).strip()
+        kr_nr = str(row.get('kr_nr', '')).strip()
+
+        if not email:
+            skipped.append(("", f"Отсутствует email для квартиры {kr_nr}"))
+            continue
+
+        matched_file = next((fname for fname in pdf_map if apt_number in fname), None)
+        if not matched_file:
+            skipped.append((email, f"Файл PDF не найден по шаблону apt_number ({apt_number})"))
+            continue
+
+        ready.append({
+            "apt_number": apt_number,
+            "kr_nr": kr_nr,
+            "email": email,
+            "pdf": matched_file
+        })
+
+    return {
+        "ready": ready,
+        "skipped": skipped
+    }
+
+
 
 
 def process_and_send_emails(client_config):
@@ -115,9 +205,13 @@ def process_and_send_emails(client_config):
 
     for _, row in df.iterrows():
         apt_number = str(row['apt_number']).strip()
-        email = row['email']
+        email = str(row.get('email', '')).strip()
         kr_nr = str(row.get('kr_nr', '')).strip()
         full_address = client_config.get("address_prefix", "") + kr_nr
+
+        if not email:
+            skipped.append(("", f"Отсутствует email для квартиры {kr_nr}"))
+            continue
 
         matched_file = next((fname for fname in pdf_map if apt_number in fname), None)
         if not matched_file:
@@ -137,6 +231,8 @@ def process_and_send_emails(client_config):
             start_time = time.time()
 
             send_email(
+                user=client_config['email_user'],
+                password=client_config['email_password'],
                 to=email,
                 subject=client_config['email_subject'],
                 body=custom_body,
