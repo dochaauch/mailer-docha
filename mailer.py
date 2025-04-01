@@ -197,7 +197,7 @@ def process_and_send_emails(client_config):
     drive_service = get_drive_service(credentials_path)
     pdf_map = get_pdf_files_map(client_config['folder_id'], drive_service)
 
-    tmp_path = os.path.join(BASE_DIR, 'tmp_pdf')
+    tmp_path = os.path.join(BASE_DIR, 'tmp_pdf', client_config['login'])
     os.makedirs(tmp_path, exist_ok=True)
 
     sent = []
