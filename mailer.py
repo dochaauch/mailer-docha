@@ -119,50 +119,10 @@ def preview_emails(client_config):
         kr_nr = str(row.get('kr_nr', '')).strip()
 
         if not email:
-            skipped.append(("", f"Отсутствует email для квартиры {apt_number}"))
-            continue
-
-        matched_file = next((fname for fname in pdf_map if fname.startwith(apt_number)), None)
-        if not matched_file:
-            skipped.append((email, f"Файл PDF не найден по шаблону apt_number ({apt_number})"))
-            continue
-
-        ready.append({
-            "apt_number": apt_number,
-            "kr_nr": kr_nr,
-            "email": email,
-            "pdf": matched_file
-        })
-
-    return {
-        "ready": ready,
-        "skipped": skipped
-    }
-def preview_emails(client_config):
-    credentials_path = os.path.join(BASE_DIR, client_config['credentials_path'])
-
-    df = get_google_sheet_data(
-        sheet_id=client_config['sheet_id'],
-        sheet_name=client_config['sheet_name'],
-        credentials_path=credentials_path
-    )
-
-    drive_service = get_drive_service(credentials_path)
-    pdf_map = get_pdf_files_map(client_config['folder_id'], drive_service)
-
-    ready = []
-    skipped = []
-
-    for _, row in df.iterrows():
-        apt_number = str(row['apt_number']).strip()
-        email = str(row.get('email', '')).strip()
-        kr_nr = str(row.get('kr_nr', '')).strip()
-
-        if not email:
             skipped.append(("", f"Отсутствует email для квартиры {kr_nr}"))
             continue
 
-        matched_file = next((fname for fname in pdf_map if fname.startwith(apt_number)), None)
+        matched_file = next((fname for fname in pdf_map if fname.startswith(apt_number)), None)
         if not matched_file:
             skipped.append((email, f"Файл PDF не найден по шаблону apt_number ({apt_number})"))
             continue
@@ -178,6 +138,7 @@ def preview_emails(client_config):
         "ready": ready,
         "skipped": skipped
     }
+
 
 
 
@@ -214,7 +175,7 @@ def process_and_send_emails(client_config):
             skipped.append(("", f"Отсутствует email для квартиры {kr_nr}"))
             continue
 
-        matched_file = next((fname for fname in pdf_map if fname.startwith(apt_number)), None)
+        matched_file = next((fname for fname in pdf_map if fname.startswith(apt_number)), None)
         if not matched_file:
             skipped.append((email, 'Файл PDF не найден по шаблону apt_number'))
             continue
