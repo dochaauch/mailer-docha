@@ -122,7 +122,7 @@ def preview_emails(client_config):
             skipped.append(("", f"Отсутствует email для квартиры {apt_number}"))
             continue
 
-        matched_file = next((fname for fname in pdf_map if apt_number in fname), None)
+        matched_file = next((fname for fname in pdf_map if fname.startwith(apt_number)), None)
         if not matched_file:
             skipped.append((email, f"Файл PDF не найден по шаблону apt_number ({apt_number})"))
             continue
@@ -162,7 +162,7 @@ def preview_emails(client_config):
             skipped.append(("", f"Отсутствует email для квартиры {kr_nr}"))
             continue
 
-        matched_file = next((fname for fname in pdf_map if apt_number in fname), None)
+        matched_file = next((fname for fname in pdf_map if fname.startwith(apt_number)), None)
         if not matched_file:
             skipped.append((email, f"Файл PDF не найден по шаблону apt_number ({apt_number})"))
             continue
