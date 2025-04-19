@@ -187,6 +187,7 @@ def process_and_send_emails(client_config):
         return {'sent': [], 'skipped': [('ВСЕ', 'Клиент не активен — рассылка отключена')]}
 
     credentials_path = os.path.join(BASE_DIR, client_config['credentials_path'])
+    print("DEBUG: path to credentials:", credentials_path)
 
     df = get_google_sheet_data(
         sheet_id=client_config['sheet_id'],
