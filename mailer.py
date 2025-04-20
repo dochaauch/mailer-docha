@@ -10,15 +10,12 @@ from googleapiclient.http import MediaIoBaseDownload
 import shutil
 import time
 
-
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(BASE_DIR, 'clients_config.json')
-
 
 def load_clients_config():
     with open(CONFIG_PATH, encoding='utf-8') as f:
         return json.load(f)
-
 
 def get_google_sheet_data(sheet_id, sheet_name, credentials_path):
     credentials = service_account.Credentials.from_service_account_file(
@@ -26,21 +23,16 @@ def get_google_sheet_data(sheet_id, sheet_name, credentials_path):
         scopes=["https://www.googleapis.com/auth/spreadsheets.readonly"]
     )
     service = build("sheets", "v4", credentials=credentials)
-
     result = service.spreadsheets().values().get(
         spreadsheetId=sheet_id,
         range=sheet_name
     ).execute()
-
     values = result.get('values', [])
     if not values:
         return pd.DataFrame()
-
     headers = values[0]
     rows = values[1:]
-
     return pd.DataFrame(rows, columns=headers)
-
 
 def get_drive_service(credentials_path):
     credentials = service_account.Credentials.from_service_account_file(
@@ -49,14 +41,12 @@ def get_drive_service(credentials_path):
     )
     return build('drive', 'v3', credentials=credentials)
 
-
 def get_pdf_files_map(folder_id, service):
     results = service.files().list(
         q=f"'{folder_id}' in parents and mimeType='application/pdf'",
         fields="files(id, name)"
     ).execute()
     return {file['name']: file['id'] for file in results['files']}
-
 
 def download_pdf(file_id, local_path, service):
     request = service.files().get_media(fileId=file_id)
@@ -68,12 +58,9 @@ def download_pdf(file_id, local_path, service):
     with open(local_path, 'wb') as f:
         f.write(file_io.getvalue())
 
-
 def send_email(user, password, to, subject, body, attachment, bcc=None):
     yag = yagmail.SMTP(user=user, password=password, timeout=30)
     yag.send(to=to, bcc=bcc, subject=subject, contents=body, attachments=attachment)
-
-
 
 def send_control_email(client_config, result):
     subject = f"[ОТЧЕТ] Рассылка для {client_config['display_name']}"
@@ -88,7 +75,6 @@ def send_control_email(client_config, result):
 """
     for email, reason in result['skipped']:
         body += f"- {email}: {reason}\n"
-
     send_email(
         user=client_config['email_user'],
         password=client_config['email_password'],
@@ -100,18 +86,18 @@ def send_control_email(client_config, result):
 
 def preview_emails(client_config):
     credentials_path = os.path.join(BASE_DIR, client_config['credentials_path'])
-
     df = get_google_sheet_data(
         sheet_id=client_config['sheet_id'],
         sheet_name=client_config['sheet_name'],
         credentials_path=credentials_path
     )
-
     drive_service = get_drive_service(credentials_path)
     pdf_map = get_pdf_files_map(client_config['folder_id'], drive_service)
 
     ready = []
     skipped = []
+    used_files = set()
+    file_usage = {}
 
     for _, row in df.iterrows():
         apt_number = str(row['apt_number']).strip()
@@ -127,6 +113,13 @@ def preview_emails(client_config):
             skipped.append((email, f"Файл PDF не найден по шаблону apt_number ({apt_number})"))
             continue
 
+        if matched_file in file_usage:
+            skipped.append((email, f"Файл PDF {matched_file} уже сопоставлен с другой строкой"))
+            continue
+
+        file_usage[matched_file] = email
+        used_files.add(matched_file)
+
         ready.append({
             "apt_number": apt_number,
             "kr_nr": kr_nr,
@@ -134,28 +127,22 @@ def preview_emails(client_config):
             "pdf": matched_file
         })
 
-    return {
-        "ready": ready,
-        "skipped": skipped
-    }
+    unused_pdfs = [pdf for pdf in pdf_map if pdf not in used_files]
+    for fname in unused_pdfs:
+        skipped.append(("-", f"Файл {fname} не был сопоставлен ни с одной строкой в таблице"))
 
-
-
-
+    return {"ready": ready, "skipped": skipped}
 
 def process_and_send_emails(client_config):
     if not client_config.get('active', False):
         return {'sent': [], 'skipped': [('ВСЕ', 'Клиент не активен — рассылка отключена')]}
 
     credentials_path = os.path.join(BASE_DIR, client_config['credentials_path'])
-    print("DEBUG: path to credentials:", credentials_path)
-
     df = get_google_sheet_data(
         sheet_id=client_config['sheet_id'],
         sheet_name=client_config['sheet_name'],
         credentials_path=credentials_path
     )
-
     drive_service = get_drive_service(credentials_path)
     pdf_map = get_pdf_files_map(client_config['folder_id'], drive_service)
 
@@ -164,6 +151,8 @@ def process_and_send_emails(client_config):
 
     sent = []
     skipped = []
+    file_usage = set()
+    count = 0
 
     for _, row in df.iterrows():
         apt_number = str(row['apt_number']).strip()
@@ -180,18 +169,20 @@ def process_and_send_emails(client_config):
             skipped.append((email, 'Файл PDF не найден по шаблону apt_number'))
             continue
 
+        if matched_file in file_usage:
+            skipped.append((email, f"Файл PDF {matched_file} уже использован в другой строке"))
+            continue
+
+        file_usage.add(matched_file)
         local_file = os.path.join(tmp_path, matched_file)
 
         try:
             download_pdf(pdf_map[matched_file], local_file, drive_service)
-
             raw_body = client_config['email_body']
             custom_body = raw_body \
                 .replace("{{kr_nr}}", kr_nr) \
                 .replace("{{full_address}}", full_address)
-
             start_time = time.time()
-
             send_email(
                 user=client_config['email_user'],
                 password=client_config['email_password'],
@@ -201,17 +192,17 @@ def process_and_send_emails(client_config):
                 attachment=local_file,
                 bcc=client_config.get('email_bcc')
             )
-
             duration = time.time() - start_time
             print(f"✅ Email sent to {email} in {duration:.2f} seconds")
-
             sent.append(email)
+            count += 1
+            if count % 49 == 0:
+                print("⏳ Пауза после 49 писем...")
+                time.sleep(60)  # пауза 60 секунд
         except Exception as e:
             skipped.append((email, f'Ошибка при отправке: {str(e)}'))
 
     result = {'sent': sent, 'skipped': skipped}
     send_control_email(client_config, result)
-
     shutil.rmtree(tmp_path, ignore_errors=True)
-
     return result
