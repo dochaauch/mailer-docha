@@ -74,7 +74,9 @@ def send_control_email(client_config, result):
 Ошибки:
 """
     for email, reason in result['skipped']:
-        body += f"- {email}: {reason}\n"
+        email_str = ", ".join(email) if isinstance(email, list) else email
+        body += f"- {email_str}: {reason}\n"
+
     send_email(
         user=client_config['email_user'],
         password=client_config['email_password'],
@@ -101,29 +103,30 @@ def preview_emails(client_config):
 
     for _, row in df.iterrows():
         apt_number = str(row['apt_number']).strip()
-        email = str(row.get('email', '')).strip()
+        #email = str(row.get('email', '')).strip()
+        emails = [e.strip() for e in str(row.get('email', '')).split(',') if e.strip()]
         kr_nr = str(row.get('kr_nr', '')).strip()
 
-        if not email:
+        if not emails:
             skipped.append(("", f"Отсутствует email для квартиры {kr_nr}"))
             continue
 
         matched_file = next((fname for fname in pdf_map if fname.startswith(apt_number)), None)
         if not matched_file:
-            skipped.append((email, f"Файл PDF не найден по шаблону apt_number ({apt_number})"))
+            skipped.append((emails, f"Файл PDF не найден по шаблону apt_number ({apt_number})"))
             continue
 
         if matched_file in file_usage:
-            skipped.append((email, f"Файл PDF {matched_file} уже сопоставлен с другой строкой"))
+            skipped.append((emails, f"Файл PDF {matched_file} уже сопоставлен с другой строкой"))
             continue
 
-        file_usage[matched_file] = email
+        file_usage[matched_file] = emails
         used_files.add(matched_file)
 
         ready.append({
             "apt_number": apt_number,
             "kr_nr": kr_nr,
-            "email": email,
+            "email": emails,
             "pdf": matched_file
         })
 
@@ -156,21 +159,23 @@ def process_and_send_emails(client_config):
 
     for _, row in df.iterrows():
         apt_number = str(row['apt_number']).strip()
-        email = str(row.get('email', '')).strip()
+        #email = str(row.get('email', '')).strip()
+        emails = [e.strip() for e in str(row.get('email', '')).split(',') if e.strip()]
+
         kr_nr = str(row.get('kr_nr', '')).strip()
         full_address = client_config.get("address_prefix", "") + kr_nr
 
-        if not email:
+        if not emails:
             skipped.append(("", f"Отсутствует email для квартиры {kr_nr}"))
             continue
 
         matched_file = next((fname for fname in pdf_map if fname.startswith(apt_number)), None)
         if not matched_file:
-            skipped.append((email, 'Файл PDF не найден по шаблону apt_number'))
+            skipped.append((emails, 'Файл PDF не найден по шаблону apt_number'))
             continue
 
         if matched_file in file_usage:
-            skipped.append((email, f"Файл PDF {matched_file} уже использован в другой строке"))
+            skipped.append((emails, f"Файл PDF {matched_file} уже использован в другой строке"))
             continue
 
         file_usage.add(matched_file)
@@ -186,21 +191,21 @@ def process_and_send_emails(client_config):
             send_email(
                 user=client_config['email_user'],
                 password=client_config['email_password'],
-                to=email,
+                to=emails,
                 subject=client_config['email_subject'],
                 body=custom_body,
                 attachment=local_file,
                 bcc=client_config.get('email_bcc')
             )
             duration = time.time() - start_time
-            print(f"✅ Email sent to {email} in {duration:.2f} seconds")
-            sent.append(email)
+            print(f"✅ Email sent to {', '.join(emails)} in {duration:.2f} seconds")
+            sent.append(emails)
             count += 1
             if count % 49 == 0:
                 print("⏳ Пауза после 49 писем...")
                 time.sleep(60)  # пауза 60 секунд
         except Exception as e:
-            skipped.append((email, f'Ошибка при отправке: {str(e)}'))
+            skipped.append((emails, f'Ошибка при отправке: {str(e)}'))
 
     result = {'sent': sent, 'skipped': skipped}
     send_control_email(client_config, result)
