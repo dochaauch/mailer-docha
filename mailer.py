@@ -9,6 +9,7 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
 import shutil
 import time
+import smtplib
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(BASE_DIR, 'clients_config.json')
@@ -164,10 +165,16 @@ def process_and_send_emails(client_config):
     file_usage = set()
     count = 0
 
-    # Параметры пауз (можно задавать в clients_config.json)
     delay_between = client_config.get('delay_between_emails', 2)  # секунд
     pause_after = client_config.get('pause_after', 20)  # писем
     long_pause = client_config.get('long_pause', 60)  # секунд
+
+    # СОЗДАЁМ SMTP до цикла
+    yag = yagmail.SMTP(
+        user=client_config['email_user'],
+        password=client_config['email_password'],
+        timeout=30
+    )
 
     for _, row in df.iterrows():
         apt_number = str(row['apt_number']).strip()
@@ -192,35 +199,31 @@ def process_and_send_emails(client_config):
         local_file = os.path.join(tmp_path, matched_file)
 
         try:
-            # Повторно создаём SMTP-сессию каждые 10 писем, чтобы не препятствовать соединению
-            if count % client_config.get('reconnect_every', 10) == 0:
-                yag = yagmail.SMTP(
-                    user=client_config['email_user'],
-                    password=client_config['email_password'],
-                    timeout=30
-                )
             download_pdf(pdf_map[matched_file], local_file, drive_service)
             raw_body = client_config['email_body']
             custom_body = raw_body \
                 .replace("{{kr_nr}}", kr_nr) \
                 .replace("{{full_address}}", full_address)
             start_time = time.time()
-            yag.send(
-                to=email,
-                bcc=client_config.get('email_bcc'),
-                subject=client_config['email_subject'],
-                contents=custom_body,
-                attachments=local_file
+
+            # !!! ВЫЗЫВАЕМ send_with_reconnect !!!
+            success, yag, err = send_with_reconnect(
+                yag, client_config, email, custom_body, local_file, max_retries=1
             )
+
             duration = time.time() - start_time
-            print(f"✅ Email sent to {email} in {duration:.2f} seconds")
-            sent.append(email)
+
+            if success:
+                print(f"✅ Email sent to {email} in {duration:.2f} seconds")
+                sent.append(email)
+            else:
+                print(f"❌ Ошибка отправки для {email}: {err}")
+                skipped.append((email, err))
+                continue  # к следующему письму
+
             count += 1
 
-            # Небольшая пауза между отправками
             time.sleep(delay_between)
-
-            # Длинная пауза каждые pause_after писем
             if count % pause_after == 0:
                 print(f"⏳ Делаем паузу {long_pause} секунд после {count} писем...")
                 time.sleep(long_pause)
@@ -232,3 +235,40 @@ def process_and_send_emails(client_config):
     send_control_email(client_config, result)
     shutil.rmtree(tmp_path, ignore_errors=True)
     return result
+
+
+
+def send_with_reconnect(yag, client_config, email, custom_body, local_file, max_retries=1):
+    """
+    Отправляет письмо с реконнектом при ошибке соединения.
+    Возвращает: (успех: bool, новое_соединение/None, текст_ошибки/None)
+    """
+    for attempt in range(max_retries + 1):
+        try:
+            yag.send(
+                to=email,
+                bcc=client_config.get('email_bcc'),
+                subject=client_config['email_subject'],
+                contents=custom_body,
+                attachments=local_file
+            )
+            return True, yag, None  # Успех
+        except (smtplib.SMTPServerDisconnected, smtplib.SMTPConnectError, smtplib.SMTPHeloError, smtplib.SMTPDataError, smtplib.SMTPException, ConnectionResetError, BrokenPipeError) as e:
+            print(f"⚠️ SMTP disconnect для {email}: попытка {attempt + 1} из {max_retries + 1}... Ошибка: {e}")
+            if attempt < max_retries:
+                try:
+                    time.sleep(2)  # Маленькая пауза перед реконнектом
+                    # Реконнект
+                    yag = yagmail.SMTP(
+                        user=client_config['email_user'],
+                        password=client_config['email_password'],
+                        timeout=30
+                    )
+                    continue  # Пробуем ещё раз
+                except Exception as ex:
+                    return False, yag, f'Ошибка при реконнекте: {ex}'
+            else:
+                return False, yag, f'Ошибка SMTP: {e}'
+        except Exception as e:
+            return False, yag, f'Ошибка при отправке: {e}'
+    return False, yag, 'Неизвестная ошибка'
