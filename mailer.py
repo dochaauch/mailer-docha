@@ -112,29 +112,36 @@ def preview_emails(client_config):
 
     for _, row in df.iterrows():
         apt_number = str(row['apt_number']).strip()
-        email = str(row.get('email', '')).strip()
+        emails_raw = str(row.get('email', '')).strip()
         kr_nr = str(row.get('kr_nr', '')).strip()
 
-        if not email:
+        if not emails_raw:
             skipped.append(("", f"Отсутствует email для квартиры {kr_nr}"))
+            continue
+
+        # Поддержка нескольких email через запятую или точку с запятой
+        emails_raw = emails_raw.replace(";", ",")
+        to_emails = [e.strip() for e in emails_raw.split(",") if e.strip()]
+        if not to_emails:
+            skipped.append(("", f"Неверный формат email для квартиры {kr_nr}: '{emails_raw}'"))
             continue
 
         matched_file = next((fname for fname in pdf_map if fname.startswith(apt_number)), None)
         if not matched_file:
-            skipped.append((email, f"Файл PDF не найден по шаблону apt_number ({apt_number})"))
+            skipped.append((to_emails, f"Файл PDF не найден по шаблону apt_number ({apt_number})"))
             continue
 
         if matched_file in file_usage:
-            skipped.append((email, f"Файл PDF {matched_file} уже сопоставлен с другой строкой"))
+            skipped.append((to_emails, f"Файл PDF {matched_file} уже сопоставлен с другой строкой"))
             continue
 
-        file_usage[matched_file] = email
+        file_usage[matched_file] = to_emails
         used_files.add(matched_file)
 
         ready.append({
             "apt_number": apt_number,
             "kr_nr": kr_nr,
-            "email": email,
+            "email": to_emails,
             "pdf": matched_file
         })
 
@@ -165,9 +172,9 @@ def process_and_send_emails(client_config):
     file_usage = set()
     count = 0
 
-    delay_between = client_config.get('delay_between_emails', 2)  # секунд
-    pause_after = client_config.get('pause_after', 20)  # писем
-    long_pause = client_config.get('long_pause', 60)  # секунд
+    delay_between = client_config.get('delay_between_emails', 0)  # секунд
+    pause_after = client_config.get('pause_after', 50)  # писем
+    long_pause = client_config.get('long_pause', 5)  # секунд
 
     # СОЗДАЁМ SMTP до цикла
     yag = yagmail.SMTP(
@@ -178,21 +185,27 @@ def process_and_send_emails(client_config):
 
     for _, row in df.iterrows():
         apt_number = str(row['apt_number']).strip()
-        email = str(row.get('email', '')).strip()
+        emails_raw = str(row.get('email', '')).strip()
         kr_nr = str(row.get('kr_nr', '')).strip()
         full_address = client_config.get("address_prefix", "") + kr_nr
 
-        if not email:
+        if not emails_raw:
             skipped.append(("", f"Отсутствует email для квартиры {kr_nr}"))
+            continue
+
+        emails_raw = emails_raw.replace(";", ",")
+        to_emails = [e.strip() for e in emails_raw.split(",") if e.strip()]
+        if not to_emails:
+            skipped.append(("", f"Неверный формат email для квартиры {kr_nr}: '{emails_raw}'"))
             continue
 
         matched_file = next((fname for fname in pdf_map if fname.startswith(apt_number)), None)
         if not matched_file:
-            skipped.append((email, 'Файл PDF не найден по шаблону apt_number'))
+            skipped.append((to_emails, f'Файл PDF не найден по шаблону {apt_number}'))
             continue
 
         if matched_file in file_usage:
-            skipped.append((email, f"Файл PDF {matched_file} уже использован в другой строке"))
+            skipped.append((to_emails, f"Файл PDF {matched_file} уже использован в другой строке"))
             continue
 
         file_usage.add(matched_file)
@@ -206,19 +219,18 @@ def process_and_send_emails(client_config):
                 .replace("{{full_address}}", full_address)
             start_time = time.time()
 
-            # !!! ВЫЗЫВАЕМ send_with_reconnect !!!
             success, yag, err = send_with_reconnect(
-                yag, client_config, email, custom_body, local_file, max_retries=1
+                yag, client_config, to_emails, custom_body, local_file, max_retries=1
             )
 
             duration = time.time() - start_time
 
             if success:
-                print(f"✅ Email sent to {email} in {duration:.2f} seconds")
-                sent.append(email)
+                print(f"✅ Email sent to {to_emails} in {duration:.2f} seconds")
+                sent.append(to_emails)
             else:
-                print(f"❌ Ошибка отправки для {email}: {err}")
-                skipped.append((email, err))
+                print(f"❌ Ошибка отправки для {to_emails}: {err}")
+                skipped.append((to_emails, err))
                 continue  # к следующему письму
 
             count += 1
@@ -229,16 +241,14 @@ def process_and_send_emails(client_config):
                 time.sleep(long_pause)
 
         except Exception as e:
-            skipped.append((email, f'Ошибка при отправке: {str(e)}'))
+            skipped.append((to_emails, f'Ошибка при отправке: {str(e)}'))
 
     result = {'sent': sent, 'skipped': skipped}
     send_control_email(client_config, result)
     shutil.rmtree(tmp_path, ignore_errors=True)
     return result
 
-
-
-def send_with_reconnect(yag, client_config, email, custom_body, local_file, max_retries=1):
+def send_with_reconnect(yag, client_config, to_emails, custom_body, local_file, max_retries=1):
     """
     Отправляет письмо с реконнектом при ошибке соединения.
     Возвращает: (успех: bool, новое_соединение/None, текст_ошибки/None)
@@ -246,7 +256,7 @@ def send_with_reconnect(yag, client_config, email, custom_body, local_file, max_
     for attempt in range(max_retries + 1):
         try:
             yag.send(
-                to=email,
+                to=to_emails,
                 bcc=client_config.get('email_bcc'),
                 subject=client_config['email_subject'],
                 contents=custom_body,
@@ -254,7 +264,7 @@ def send_with_reconnect(yag, client_config, email, custom_body, local_file, max_
             )
             return True, yag, None  # Успех
         except (smtplib.SMTPServerDisconnected, smtplib.SMTPConnectError, smtplib.SMTPHeloError, smtplib.SMTPDataError, smtplib.SMTPException, ConnectionResetError, BrokenPipeError) as e:
-            print(f"⚠️ SMTP disconnect для {email}: попытка {attempt + 1} из {max_retries + 1}... Ошибка: {e}")
+            print(f"⚠️ SMTP disconnect для {to_emails}: попытка {attempt + 1} из {max_retries + 1}... Ошибка: {e}")
             if attempt < max_retries:
                 try:
                     time.sleep(2)  # Маленькая пауза перед реконнектом
