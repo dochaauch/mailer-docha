@@ -22,7 +22,12 @@ def get_google_sheet_data(sheet_id, sheet_name, credentials_path):
         credentials_path,
         scopes=["https://www.googleapis.com/auth/spreadsheets.readonly"]
     )
-    service = build("sheets", "v4", credentials=credentials)
+    # Отключаем кеширование discovery, чтобы избежать предупреждений file_cache
+    service = build(
+        "sheets", "v4",
+        credentials=credentials,
+        cache_discovery=False
+    )
     result = service.spreadsheets().values().get(
         spreadsheetId=sheet_id,
         range=sheet_name
@@ -39,7 +44,12 @@ def get_drive_service(credentials_path):
         credentials_path,
         scopes=['https://www.googleapis.com/auth/drive']
     )
-    return build('drive', 'v3', credentials=credentials)
+    # Отключаем кеширование discovery
+    return build(
+        'drive', 'v3',
+        credentials=credentials,
+        cache_discovery=False
+    )
 
 def get_pdf_files_map(folder_id, service):
     results = service.files().list(
@@ -74,9 +84,7 @@ def send_control_email(client_config, result):
 Ошибки:
 """
     for email, reason in result['skipped']:
-        email_str = ", ".join(email) if isinstance(email, list) else email
-        body += f"- {email_str}: {reason}\n"
-
+        body += f"- {email}: {reason}\n"
     send_email(
         user=client_config['email_user'],
         password=client_config['email_password'],
@@ -103,30 +111,29 @@ def preview_emails(client_config):
 
     for _, row in df.iterrows():
         apt_number = str(row['apt_number']).strip()
-        #email = str(row.get('email', '')).strip()
-        emails = [e.strip() for e in str(row.get('email', '')).split(',') if e.strip()]
+        email = str(row.get('email', '')).strip()
         kr_nr = str(row.get('kr_nr', '')).strip()
 
-        if not emails:
+        if not email:
             skipped.append(("", f"Отсутствует email для квартиры {kr_nr}"))
             continue
 
         matched_file = next((fname for fname in pdf_map if fname.startswith(apt_number)), None)
         if not matched_file:
-            skipped.append((emails, f"Файл PDF не найден по шаблону apt_number ({apt_number})"))
+            skipped.append((email, f"Файл PDF не найден по шаблону apt_number ({apt_number})"))
             continue
 
         if matched_file in file_usage:
-            skipped.append((emails, f"Файл PDF {matched_file} уже сопоставлен с другой строкой"))
+            skipped.append((email, f"Файл PDF {matched_file} уже сопоставлен с другой строкой"))
             continue
 
-        file_usage[matched_file] = emails
+        file_usage[matched_file] = email
         used_files.add(matched_file)
 
         ready.append({
             "apt_number": apt_number,
             "kr_nr": kr_nr,
-            "email": emails,
+            "email": email,
             "pdf": matched_file
         })
 
@@ -157,55 +164,69 @@ def process_and_send_emails(client_config):
     file_usage = set()
     count = 0
 
+    # Параметры пауз (можно задавать в clients_config.json)
+    delay_between = client_config.get('delay_between_emails', 2)  # секунд
+    pause_after = client_config.get('pause_after', 20)  # писем
+    long_pause = client_config.get('long_pause', 60)  # секунд
+
     for _, row in df.iterrows():
         apt_number = str(row['apt_number']).strip()
-        #email = str(row.get('email', '')).strip()
-        emails = [e.strip() for e in str(row.get('email', '')).split(',') if e.strip()]
-
+        email = str(row.get('email', '')).strip()
         kr_nr = str(row.get('kr_nr', '')).strip()
         full_address = client_config.get("address_prefix", "") + kr_nr
 
-        if not emails:
+        if not email:
             skipped.append(("", f"Отсутствует email для квартиры {kr_nr}"))
             continue
 
         matched_file = next((fname for fname in pdf_map if fname.startswith(apt_number)), None)
         if not matched_file:
-            skipped.append((emails, 'Файл PDF не найден по шаблону apt_number'))
+            skipped.append((email, 'Файл PDF не найден по шаблону apt_number'))
             continue
 
         if matched_file in file_usage:
-            skipped.append((emails, f"Файл PDF {matched_file} уже использован в другой строке"))
+            skipped.append((email, f"Файл PDF {matched_file} уже использован в другой строке"))
             continue
 
         file_usage.add(matched_file)
         local_file = os.path.join(tmp_path, matched_file)
 
         try:
+            # Повторно создаём SMTP-сессию каждые 10 писем, чтобы не препятствовать соединению
+            if count % client_config.get('reconnect_every', 10) == 0:
+                yag = yagmail.SMTP(
+                    user=client_config['email_user'],
+                    password=client_config['email_password'],
+                    timeout=30
+                )
             download_pdf(pdf_map[matched_file], local_file, drive_service)
             raw_body = client_config['email_body']
             custom_body = raw_body \
                 .replace("{{kr_nr}}", kr_nr) \
                 .replace("{{full_address}}", full_address)
             start_time = time.time()
-            send_email(
-                user=client_config['email_user'],
-                password=client_config['email_password'],
-                to=emails,
+            yag.send(
+                to=email,
+                bcc=client_config.get('email_bcc'),
                 subject=client_config['email_subject'],
-                body=custom_body,
-                attachment=local_file,
-                bcc=client_config.get('email_bcc')
+                contents=custom_body,
+                attachments=local_file
             )
             duration = time.time() - start_time
-            print(f"✅ Email sent to {', '.join(emails)} in {duration:.2f} seconds")
-            sent.append(emails)
+            print(f"✅ Email sent to {email} in {duration:.2f} seconds")
+            sent.append(email)
             count += 1
-            if count % 49 == 0:
-                print("⏳ Пауза после 49 писем...")
-                time.sleep(60)  # пауза 60 секунд
+
+            # Небольшая пауза между отправками
+            time.sleep(delay_between)
+
+            # Длинная пауза каждые pause_after писем
+            if count % pause_after == 0:
+                print(f"⏳ Делаем паузу {long_pause} секунд после {count} писем...")
+                time.sleep(long_pause)
+
         except Exception as e:
-            skipped.append((emails, f'Ошибка при отправке: {str(e)}'))
+            skipped.append((email, f'Ошибка при отправке: {str(e)}'))
 
     result = {'sent': sent, 'skipped': skipped}
     send_control_email(client_config, result)
